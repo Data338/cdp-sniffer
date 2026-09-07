@@ -1,0 +1,98 @@
+#!/bin/bash
+# sniffer-start — Launch Chrome + CDP sniffer in one command
+set -e
+
+CHROME_PORT="${CDP_CHROME_PORT:-9222}"
+PROXY_PORT="${CDP_PROXY_PORT:-9223}"
+USER_DATA="$HOME/.config/cdp-sniffer-chrome"
+BASE="$HOME/Documents/tools/cdp-sniffer"
+
+# cdp-sniffer launcher — --class tags the window so KWin can place it on the
+# opencode desktop via scripts/kwin-place-sniffer.js (one-shot D-Bus script).
+PLACE_SCRIPT="$BASE/scripts/kwin-place-sniffer.js"
+RESOLVE_PROFILE="$BASE/scripts/resolve-profile.cjs"
+no_kwin=0
+RESET_PROFILE=0
+PROFILE_ARG=""
+for a in "$@"; do
+  case "$a" in
+    --reset) RESET_PROFILE=1 ;;
+    --no-kwin-place) no_kwin=1 ;;
+    --profile) PROFILE_ARG="ask" ;;
+    --profile=*) PROFILE_ARG="${a#--profile=}" ;;
+  esac
+done
+
+# Env fallback: SNIFFER_PROFILE is set by the MCP server (sniffer_start_stack
+# → env) so harness callers can pick the profile without passing CLI args.
+: "${PROFILE_ARG:=$SNIFFER_PROFILE}"
+
+echo "=== cdp-sniffer launcher ==="
+
+# Pre-load: KWin script must be ready before the Chrome window maps, so the
+# windowAdded handler catches it. Screenshot: KDE Window Management → scripts.
+if [ "$no_kwin" = "0" ] && command -v qdbus-qt6 >/dev/null 2>&1 && [ -f "$PLACE_SCRIPT" ]; then
+  script_id=$(qdbus-qt6 org.kde.KWin /Scripting loadScript "$PLACE_SCRIPT" "cdp-sniffer-place" 2>/dev/null || true)
+  [ -n "$script_id" ] && qdbus-qt6 org.kde.KWin /Scripting start >/dev/null 2>&1 || true
+fi
+
+# 1. Kill leftover on chrome and proxy ports
+kill $(lsof -ti :$CHROME_PORT 2>/dev/null) 2>/dev/null || true
+kill $(lsof -ti :$PROXY_PORT 2>/dev/null) 2>/dev/null || true
+sleep 0.5
+
+# 2. Chrome
+echo "[1/2] Chrome..."
+if [ "$RESET_PROFILE" = "1" ]; then
+  echo "  Aviso: apagar o perfil remove tambem as extensoes da Web Store e o login."
+  rm -rf "$USER_DATA"
+fi
+mkdir -p "$USER_DATA"
+
+# Resolve --profile (email or "ask" → directory name) before launching.
+# The resident profile lives in $USER_DATA/<dir>; Local State is the source of truth.
+PROFILE_FLAGS=()
+if [ -n "$PROFILE_ARG" ]; then
+  PROFILE_DIR=$(node "$RESOLVE_PROFILE" "$USER_DATA" "$PROFILE_ARG") || exit 1
+  PROFILE_FLAGS=(--profile-directory="$PROFILE_DIR")
+  echo "  Profile: $PROFILE_ARG → $PROFILE_DIR"
+fi
+
+google-chrome \
+  --remote-debugging-port="$CHROME_PORT" \
+  --user-data-dir="$USER_DATA" \
+  --class=cdp-sniffer-chrome \
+  "${PROFILE_FLAGS[@]}" \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-session-crashed-bubble \
+  --disable-http3 \
+  --disable-quic \
+  &>/dev/null &
+
+for i in {1..20}; do
+  sleep 0.5
+  if curl -s --connect-timeout 1 "http://127.0.0.1:$CHROME_PORT/json/version" 2>/dev/null | grep -q webSocketDebuggerUrl; then
+    echo "  Chrome ready :$CHROME_PORT"
+    break
+  fi
+done
+
+# 3. Sniffer
+echo "[2/2] Sniffer..."
+echo ""
+cd "$BASE"
+nohup node index.js > /tmp/sniffer-out.log 2>&1 &
+sleep 2
+cat /tmp/sniffer-out.log
+echo ""
+echo "=========================================="
+echo " READY"
+echo " Chrome  :$CHROME_PORT | Proxy :$PROXY_PORT"
+echo " Queries: sniffer query --domain Network --last 10"
+echo "          sniffer query-ws --url ifelse   # WebSocket frames"
+echo "          sniffer query-sse --url stream  # SSE events"
+echo " Kill:    kill \$(lsof -ti :$PROXY_PORT)"
+echo " (Chrome launched with --disable-http3/--disable-quic for faithful CDP capture)"
+echo " Profile: --profile=<email> | --profile=ask  (list: node scripts/resolve-profile.cjs \$USER_DATA list)"
+echo "=========================================="

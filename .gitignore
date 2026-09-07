@@ -1,0 +1,23 @@
+# deps
+node_modules/
+
+# runtime (created on first run, machine-local)
+*.db
+*.db-shm
+*.db-wal
+/tmp/sniffer-out.log
+
+# chrome debugging profile (holds real logins/cookies — never commit)
+.cdp-sniffer-chrome/
+
+# env / secrets
+.env
+.env.*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

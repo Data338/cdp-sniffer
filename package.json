@@ -1,0 +1,23 @@
+{
+  "name": "cdp-sniffer",
+  "version": "1.0.0",
+  "description": "Chrome DevTools Protocol sniffer — proxy + SQLite + MCP stdio server. No REST API.",
+  "main": "index.js",
+  "bin": {
+    "sniffer": "index.js",
+    "sniffer-start": "sniffer-start",
+    "sniffer-mcp": "src/mcp.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Data338/cdp-sniffer.git"
+  },
+  "keywords": ["chrome", "devtools", "cdp", "network", "sniffer", "reverse-engineering", "mcp", "sqlite"],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^11.0.0",
+    "ws": "^8.21.1",
+    "zod": "^4.5.4"
+  }
+}
