@@ -458,8 +458,11 @@ function createProxy(listenPort, targetPort, { onCdpEvent, onHttpEvent, onRespon
     clientWs.on('error', function () {});
   });
 
-  httpServer.listen(listenPort, function () {
-    console.log('\x1b[1m\x1b[92mCDP PROXY\x1b[0m  :' + listenPort + ' → :' + targetPort + '  (' + AUTO_DOMAINS.length + ' domains)');
+  // Loopback by default: the relay can drive the logged-in Chrome, so never
+  // expose it on the LAN unless explicitly requested (CDP_PROXY_HOST=0.0.0.0).
+  var listenHost = process.env.CDP_PROXY_HOST || '127.0.0.1';
+  httpServer.listen(listenPort, listenHost, function () {
+    console.log('\x1b[1m\x1b[92mCDP PROXY\x1b[0m  ' + listenHost + ':' + listenPort + ' → :' + targetPort + '  (' + AUTO_DOMAINS.length + ' domains)');
     startObserver();
   });
 
